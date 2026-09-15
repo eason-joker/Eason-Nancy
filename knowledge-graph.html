@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>知识图谱可视化 - 武氏祠画像石</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪨</text></svg>">
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    :root {
+      --bg-primary: #0a0a0f;
+      --bg-secondary: #12121a;
+      --bg-card: #1a1a24;
+      --text-primary: #e8e6e3;
+      --text-secondary: #8a8a8a;
+      --accent-gold: #c9a962;
+      --accent-jade: #5a9a7a;
+      --accent-red: #b85c5c;
+      --accent-blue: #5c7ab8;
+      --border-subtle: rgba(255,255,255,0.08);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Noto Serif SC', 'Source Han Serif SC', 'SimSun', serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      overflow: hidden;
+    }
+
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      padding: 1rem 2rem;
+      background: rgba(10, 10, 15, 0.9);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .nav-logo {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--accent-gold);
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 2rem;
+      list-style: none;
+    }
+
+    .nav-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.9rem;
+      transition: color 0.3s;
+    }
+
+    .nav-links a:hover { color: var(--text-primary); }
+
+    #graph-container {
+      width: 100vw;
+      height: 100vh;
+      background: radial-gradient(ellipse at center, #0f0f18 0%, #0a0a0f 100%);
+    }
+
+    #graph-svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .node {
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+
+    .node:hover { transform: scale(1.1); }
+
+    .node-label {
+      font-size: 11px;
+      fill: var(--text-secondary);
+      text-anchor: middle;
+      pointer-events: none;
+    }
+
+    .link {
+      stroke: rgba(255,255,255,0.08);
+      stroke-width: 1;
+    }
+
+    .link-label {
+      font-size: 9px;
+      fill: var(--text-secondary);
+      text-anchor: middle;
+      opacity: 0.6;
+    }
+
+    /* 控制面板 */
+    .control-panel {
+      position: fixed;
+      top: 80px;
+      left: 1.5rem;
+      background: rgba(18, 18, 26, 0.95);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 1.25rem;
+      width: 220px;
+      z-index: 100;
+    }
+
+    .panel-title {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-bottom: 1rem;
+      letter-spacing: 0.1em;
+    }
+
+    .filter-group {
+      margin-bottom: 1.25rem;
+    }
+
+    .filter-label {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.5rem;
+      display: block;
+    }
+
+    .filter-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.4rem;
+      cursor: pointer;
+    }
+
+    .filter-item input {
+      accent-color: var(--accent-gold);
+    }
+
+    .filter-item span {
+      font-size: 0.85rem;
+    }
+
+    .filter-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .stats-panel {
+      position: fixed;
+      bottom: 1.5rem;
+      left: 1.5rem;
+      background: rgba(18, 18, 26, 0.95);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      z-index: 100;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      margin-bottom: 0.3rem;
+    }
+
+    .stat-row:last-child { margin-bottom: 0; }
+
+    .stat-val { color: var(--accent-gold); }
+
+    /* 详情面板 */
+    .detail-panel {
+      position: fixed;
+      top: 80px;
+      right: 1.5rem;
+      width: 320px;
+      background: rgba(18, 18, 26, 0.95);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 1.5rem;
+      z-index: 100;
+      display: none;
+    }
+
+    .detail-panel.visible { display: block; }
+
+    .detail-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .detail-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .detail-title {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    .detail-type {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+
+    .detail-section {
+      margin-bottom: 1rem;
+    }
+
+    .detail-section-title {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      letter-spacing: 0.1em;
+      margin-bottom: 0.5rem;
+    }
+
+    .detail-section-content {
+      font-size: 0.85rem;
+      color: var(--text-primary);
+      line-height: 1.6;
+    }
+
+    .relation-tag {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      background: rgba(201, 169, 98, 0.1);
+      border: 1px solid rgba(201, 169, 98, 0.2);
+      border-radius: 3px;
+      font-size: 0.75rem;
+      margin-right: 0.4rem;
+      margin-bottom: 0.4rem;
+    }
+
+    .close-btn {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      width: 24px;
+      height: 24px;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 1.2rem;
+    }
+
+    .close-btn:hover { color: var(--text-primary); }
+
+    /* 图例 */
+    .legend {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      background: rgba(18, 18, 26, 0.95);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      z-index: 100;
+    }
+
+    .legend-title {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      letter-spacing: 0.1em;
+      margin-bottom: 0.75rem;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.4rem;
+      font-size: 0.8rem;
+    }
+
+    /* 提示框 */
+    .tooltip {
+      position: fixed;
+      background: rgba(18, 18, 26, 0.95);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 0.6rem 1rem;
+      font-size: 0.85rem;
+      pointer-events: none;
+      z-index: 1000;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="nav-logo">武氏祠画像石</div>
+    <ul class="nav-links">
+      <li><a href="index.html">返回首页</a></li>
+      <li><a href="index.html#retrieval">图像检索</a></li>
+      <li><a href="index.html#knowledge-graph" class="active">知识图谱</a></li>
+      <li><a href="index.html#narrative">交互叙事</a></li>
+    </ul>
+  </nav>
+
+  <div id="graph-container"></div>
+
+  <!-- 控制面板 -->
+  <div class="control-panel">
+    <div class="panel-title">节点筛选</div>
+    <div class="filter-group">
+      <label class="filter-label">节点类型</label>
+      <label class="filter-item">
+        <input type="checkbox" checked data-type="image">
+        <div class="filter-dot" style="background:var(--accent-gold);"></div>
+        <span>图像单元</span>
+      </label>
+      <label class="filter-item">
+        <input type="checkbox" checked data-type="semantic">
+        <div class="filter-dot" style="background:var(--accent-jade);"></div>
+        <span>语义概念</span>
+      </label>
+      <label class="filter-item">
+        <input type="checkbox" checked data-type="ancient">
+        <div class="filter-dot" style="background:var(--accent-red);"></div>
+        <span>古文献</span>
+      </label>
+      <label class="filter-item">
+        <input type="checkbox" checked data-type="research">
+        <div class="filter-dot" style="background:var(--accent-blue);"></div>
+        <span>研究文献</span>
+      </label>
+    </div>
+    <div class="filter-group">
+      <label class="filter-label">关系类型</label>
+      <label class="filter-item">
+        <input type="checkbox" checked data-rel="depicts">
+        <span>描绘</span>
+      </label>
+      <label class="filter-item">
+        <input type="checkbox" checked data-rel="discusses">
+        <span>讨论</span>
+      </label>
+      <label class="filter-item">
+        <input type="checkbox" checked data-rel="interprets">
+        <span>解释</span>
+      </label>
+    </div>
+  </div>
+
+  <!-- 统计面板 -->
+  <div class="stats-panel">
+    <div class="stat-row">
+      <span>可见节点</span>
+      <span class="stat-val" id="node-count">0</span>
+    </div>
+    <div class="stat-row">
+      <span>可见关系</span>
+      <span class="stat-val" id="link-count">0</span>
+    </div>
+  </div>
+
+  <!-- 详情面板 -->
+  <div class="detail-panel" id="detail-panel">
+    <button class="close-btn" onclick="closeDetail()">×</button>
+    <div class="detail-header">
+      <div class="detail-icon" id="detail-icon"></div>
+      <div>
+        <div class="detail-title" id="detail-title">节点名称</div>
+        <div class="detail-type" id="detail-type">类型</div>
+      </div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-title">关联概念</div>
+      <div class="detail-section-content" id="detail-concepts"></div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-title">关联文献</div>
+      <div class="detail-section-content" id="detail-refs"></div>
+    </div>
+  </div>
+
+  <!-- 图例 -->
+  <div class="legend">
+    <div class="legend-title">图例</div>
+    <div class="legend-item">
+      <div class="filter-dot" style="background:var(--accent-gold);"></div>
+      <span>图像单元</span>
+    </div>
+    <div class="legend-item">
+      <div class="filter-dot" style="background:var(--accent-jade);"></div>
+      <span>语义概念</span>
+    </div>
+    <div class="legend-item">
+      <div class="filter-dot" style="background:var(--accent-red);"></div>
+      <span>古文献</span>
+    </div>
+    <div class="legend-item">
+      <div class="filter-dot" style="background:var(--accent-blue);"></div>
+      <span>研究文献</span>
+    </div>
+  </div>
+
+  <!-- 提示框 -->
+  <div class="tooltip" id="tooltip"></div>
+
+  <script>
+    // 示例数据 - 后续替换为真实数据
+    const colors = {
+      image: '#c9a962',
+      semantic: '#5a9a7a',
+      ancient: '#b85c5c',
+      research: '#5c7ab8'
+    };
+
+    // 生成示例节点
+    const nodes = [
+      { id: 1, name: '铺首', type: 'image', group: 'image' },
+      { id: 2, name: '门扉', type: 'image', group: 'image' },
+      { id: 3, name: '辅首', type: 'semantic', group: 'semantic' },
+      { id: 4, name: '门饰', type: 'semantic', group: 'semantic' },
+      { id: 5, name: '《营造法式》', type: 'ancient', group: 'ancient' },
+      { id: 6, name: '《后汉书》', type: 'ancient', group: 'ancient' },
+      { id: 7, name: '信立祥', type: 'research', group: 'research' },
+      { id: 8, name: '蒋英炬', type: 'research', group: 'research' },
+      { id: 9, name: '环', type: 'image', group: 'image' },
+      { id: 10, name: '兽面', type: 'semantic', group: 'semantic' },
+      { id: 11, name: '《释名》', type: 'ancient', group: 'ancient' },
+      { id: 12, name: '刘向', type: 'research', group: 'research' },
+      { id: 13, name: '常羲', type: 'image', group: 'image' },
+      { id: 14, name: '月亮', type: 'semantic', group: 'semantic' },
+      { id: 15, name: '《山海经》', type: 'ancient', group: 'ancient' },
+      { id: 16, name: '兔', type: 'image', group: 'image' },
+      { id: 17, name: '蟾蜍', type: 'image', group: 'image' },
+      { id: 18, name: '嫦娥', type: 'semantic', group: 'semantic' },
+    ];
+
+    // 关系数据
+    const links = [
+      { source: 1, target: 3, relation: 'depicts', label: '描绘' },
+      { source: 1, target: 4, relation: 'interprets', label: '属于' },
+      { source: 1, target: 5, relation: 'discusses', label: '记载' },
+      { source: 3, target: 10, relation: 'interprets', label: '解释为' },
+      { source: 5, target: 7, relation: 'discusses', label: '引用' },
+      { source: 6, target: 3, relation: 'interprets', label: '记载' },
+      { source: 7, target: 8, relation: 'discusses', label: '争议' },
+      { source: 1, target: 9, relation: 'depicts', label: '包含' },
+      { source: 9, target: 11, relation: 'discusses', label: '记载' },
+      { source: 13, target: 14, relation: 'depicts', label: '象征' },
+      { source: 13, target: 18, relation: 'interprets', label: '对应' },
+      { source: 14, target: 15, relation: 'discusses', label: '记载' },
+      { source: 16, target: 14, relation: 'depicts', label: '附属于' },
+      { source: 17, target: 14, relation: 'depicts', label: '附属于' },
+      { source: 16, target: 15, relation: 'discusses', label: '记载' },
+      { source: 17, target: 15, relation: 'discusses', label: '记载' },
+    ];
+
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    const svg = d3.select('#graph-container')
+      .append('svg')
+      .attr('id', 'graph-svg')
+      .attr('viewBox', [0, 0, width, height]);
+
+    // 添加缩放
+    const g = svg.append('g');
+    svg.call(d3.zoom()
+      .scaleExtent([0.2, 4])
+      .on('zoom', (event) => {
+        g.attr('transform', event.transform);
+      }));
+
+    // 力导向模拟
+    const simulation = d3.forceSimulation(nodes)
+      .force('link', d3.forceLink(links).id(d => d.id).distance(120))
+      .force('charge', d3.forceManyBody().strength(-300))
+      .force('center', d3.forceCenter(width / 2, height / 2))
+      .force('collision', d3.forceCollide().radius(40));
+
+    // 绘制连线
+    const link = g.append('g')
+      .selectAll('line')
+      .data(links)
+      .join('line')
+      .attr('class', 'link');
+
+    // 绘制节点
+    const node = g.append('g')
+      .selectAll('g')
+      .data(nodes)
+      .join('g')
+      .attr('class', 'node')
+      .call(d3.drag()
+        .on('start', dragstarted)
+        .on('drag', dragged)
+        .on('end', dragended));
+
+    node.append('circle')
+      .attr('r', d => d.type === 'image' ? 22 : 18)
+      .attr('fill', d => colors[d.group])
+      .attr('stroke', '#fff')
+      .attr('stroke-width', 1.5)
+      .attr('stroke-opacity', 0.3);
+
+    node.append('text')
+      .attr('class', 'node-label')
+      .attr('dy', 32)
+      .text(d => d.name);
+
+    // 节点点击事件
+    node.on('click', (event, d) => {
+      showDetail(d);
+    });
+
+    // 节点悬停提示
+    node.on('mouseenter', (event, d) => {
+      const tooltip = document.getElementById('tooltip');
+      tooltip.textContent = d.name;
+      tooltip.style.display = 'block';
+      tooltip.style.left = (event.pageX + 10) + 'px';
+      tooltip.style.top = (event.pageY - 10) + 'px';
+    }).on('mouseleave', () => {
+      document.getElementById('tooltip').style.display = 'none';
+    });
+
+    // 更新位置
+    simulation.on('tick', () => {
+      link
+        .attr('x1', d => d.source.x)
+        .attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x)
+        .attr('y2', d => d.target.y);
+
+      node.attr('transform', d => `translate(${d.x},${d.y})`);
+    });
+
+    // 更新统计
+    function updateStats() {
+      document.getElementById('node-count').textContent = nodes.filter(n => n.visible !== false).length;
+      document.getElementById('link-count').textContent = links.length;
+    }
+
+    updateStats();
+
+    // 拖拽函数
+    function dragstarted(event, d) {
+      if (!event.active) simulation.alphaTarget(0.3).restart();
+      d.fx = d.x;
+      d.fy = d.y;
+    }
+
+    function dragged(event, d) {
+      d.fx = event.x;
+      d.fy = event.y;
+    }
+
+    function dragended(event, d) {
+      if (!event.active) simulation.alphaTarget(0);
+      d.fx = null;
+      d.fy = null;
+    }
+
+    // 显示详情面板
+    function showDetail(d) {
+      const panel = document.getElementById('detail-panel');
+      panel.classList.add('visible');
+
+      document.getElementById('detail-title').textContent = d.name;
+
+      const typeNames = {
+        image: '图像单元',
+        semantic: '语义概念',
+        ancient: '古文献',
+        research: '研究文献'
+      };
+      document.getElementById('detail-type').textContent = typeNames[d.group];
+
+      const iconEl = document.getElementById('detail-icon');
+      iconEl.style.background = colors[d.group] + '33';
+      iconEl.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${colors[d.group]}" stroke-width="2">
+        ${d.type === 'image' ? '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>' :
+          d.type === 'ancient' ? '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>' :
+          '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>'}
+      </svg>`;
+
+      // 关联概念
+      const relatedConcepts = links.filter(l => l.source.id === d.id || l.target.id === d.id);
+      const conceptsHtml = relatedConcepts.slice(0, 5).map(l => {
+        const other = l.source.id === d.id ? l.target : l.source;
+        return `<span class="relation-tag">${other.name}</span>`;
+      }).join('');
+      document.getElementById('detail-concepts').innerHTML = conceptsHtml || '<span style="color:var(--text-secondary)">暂无关联</span>';
+
+      // 关联文献
+      const relatedRefs = relatedConcepts.filter(l => l.source.type === 'ancient' || l.target.type === 'ancient');
+      const refsHtml = relatedRefs.slice(0, 3).map(l => {
+        const other = l.source.id === d.id ? l.target : l.source;
+        return `<span class="relation-tag">${other.name}</span>`;
+      }).join('');
+      document.getElementById('detail-refs').innerHTML = refsHtml || '<span style="color:var(--text-secondary)">暂无关联</span>';
+    }
+
+    function closeDetail() {
+      document.getElementById('detail-panel').classList.remove('visible');
+    }
+
+    // 筛选功能
+    document.querySelectorAll('.control-panel input').forEach(input => {
+      input.addEventListener('change', () => {
+        const typeFilters = [...document.querySelectorAll('[data-type]')].map(i => i.checked ? i.dataset.type : null).filter(Boolean);
+        const relFilters = [...document.querySelectorAll('[data-rel]')].map(i => i.checked ? i.dataset.rel : null).filter(Boolean);
+
+        node.style('opacity', d => {
+          if (d.group && !typeFilters.includes(d.group)) return 0.1;
+          return 1;
+        });
+
+        link.style('opacity', l => {
+          if (l.relation && !relFilters.includes(l.relation)) return 0.05;
+          return 0.3;
+        });
+      });
+    });
+
+    // 窗口调整
+    window.addEventListener('resize', () => {
+      simulation.force('center', d3.forceCenter(window.innerWidth / 2, window.innerHeight / 2));
+      simulation.alpha(0.3).restart();
+    });
+  </script>
+</body>
+</html>
